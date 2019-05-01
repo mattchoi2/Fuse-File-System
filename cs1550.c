@@ -138,7 +138,7 @@ static directory_entry * get_directory_from_root(char * directoryName, long * di
 	int i;
 	for (i = 0; i < root->nDirectories; i++) {
 		if (strcmp(root->directories[i].dname, directoryName) == 0) {
-			printf("The directory %s is at block %ld\n", root->directories[i].dname, root->directories[i].nStartBlock);
+			// printf("The directory %s is at block %ld\n", root->directories[i].dname, root->directories[i].nStartBlock);
 			*dirBlock = root->directories[i].nStartBlock;
 		}
 	}
@@ -152,7 +152,7 @@ static int write_file_to_disk(long blockNum, const char * buf, int size, int off
 	int res = 0;
 	// Go to the block to write, plus offset
 	fseek(disk, (blockNum * BLOCK_SIZE) + offset, SEEK_SET);
-	printf("Writing buffer starting at block %d + %d of size %d\n", blockNum, offset, size);
+	// printf("Writing buffer starting at block %d + %d of size %d\n", blockNum, offset, size);
 	// Write the buffer to the disk
 	fwrite(buf, size, 1, disk);
 	return res;
@@ -176,14 +176,18 @@ static long find_open_block(FILE * disk) {
 		for (i = 0; i < 8; i++) { // Get the size in BITS
 			//printf("At byte %d and bit %d\n", byteCount, bitCount);
 			// The first 1 bit is for the root
-			if (byteCount == 0 && i < ROOT_BIT_OFFSET) { printf("Avoid at root\n"); bitCount ++; continue; }
+			if (byteCount == 0 && i < ROOT_BIT_OFFSET) {
+				// printf("Avoid at root\n");
+				bitCount ++;
+				continue;
+			}
 			// The last 3 bits are for the bit map!
 			if (byteCount == BIT_MAP_SIZE && 7 - i <= BITMAP_BIT_OFFSET) {  printf("Avoid at bitmap blocks\n"); bitCount ++; continue; }
 			int bit = (byte >> i) & 0x1; // Get the ith bit in the byte
 			if (bit == 0) {
-				printf("Open block found at block number %d\n", bitCount);
+				// printf("Open block found at block number %d\n", bitCount);
 				byte = modifyBit(byte, i, 1); // Write a 1 into the byte at position i
-				//printf("New byte is %d\n", byte);
+				// printf("New byte is %d\n", byte);
 				fseek(disk, -1, SEEK_CUR); // Go back to the current byte
 				fwrite(&byte, 1, 1, disk); // Now write the new byte bitmap there!
 				return bitCount;
@@ -208,6 +212,7 @@ static int cs1550_read(const char *path, char *buf, size_t size, off_t offset,
 	(void) offset;
 	(void) fi;
 	(void) path;
+	(void) size;
 	printf("=======================\n");
 	printf("read() debug messages:\n");
 	//check to make sure path exists
@@ -242,9 +247,10 @@ static int cs1550_read(const char *path, char *buf, size_t size, off_t offset,
 		printf("Good! Beginning to search thru directory %s with %d files\n", directory, dir->nFiles);
 		for (i = 0; i < dir->nFiles; i++) {
 			printf("Looking for file. Comparing %s to %s\n", filename, dir->files[i].fname);
+			if (strcmp(dir->files[i].fext, extension) == 0) { printf("Test\n"); }
 			if (strcmp(dir->files[i].fname, filename) == 0) {
 				filesize = dir->files[i].fsize;
-				printf("The filesize is %d and offset is %d\n", filesize, offset);
+				// printf("The filesize is %d and offset is %d\n", filesize, offset);
 				if (filesize > offset) {
 					// Seek to the beginning of the file
 					fseek(disk, dir->files[i].nStartBlock * BLOCK_SIZE, SEEK_SET);
@@ -312,13 +318,14 @@ static int cs1550_write(const char *path, const char *buf, size_t size,
 	// Check for the file existing
 	for (i = 0; i < dir->nFiles; i++) {
 		if (strcmp(dir->files[i].fname, filename) == 0) {
+			if (strcmp(dir->files[i].fext, extension) == 0) { printf("Test\n"); }
 			if (offset > size) { // Make sure that we don't go over the limit
 				res = -EFBIG;
 			} else {
 				// Assign the size of the new block
 				dir->files[i].fsize = size;
 				dir->files[i].nStartBlock = find_open_block(disk);
-				printf("The size of the new file %s is %d (%d as a strlen)\n", dir->files[i].fname, dir->files[i].fsize, strlen(buf));
+				// printf("The size of the new file %s is %d (%d as a strlen)\n", dir->files[i].fname, dir->files[i].fsize, strlen(buf));
 				// Once we update the directory to have the new cs1550_file_directory, we can update the directory
 				write_to_disk((void *) dir, dirBlock, disk);
 				// We also have to write the file's data to disk at the recorded block!
@@ -390,7 +397,7 @@ static int cs1550_mknod(const char *path, mode_t mode, dev_t dev)
 		strcpy(dir->files[dir->nFiles].fname, filename);
 		strcpy(dir->files[dir->nFiles].fext, extension);
 		dir->files[dir->nFiles].nStartBlock = find_open_block(disk);
-		printf("FILE %s with extension %s created at open block %d\n", dir->files[dir->nFiles].fname, dir->files[dir->nFiles].fext, dir->files[dir->nFiles].nStartBlock);
+		// printf("FILE %s with extension %s created at open block %d\n", dir->files[dir->nFiles].fname, dir->files[dir->nFiles].fext, dir->files[dir->nFiles].nStartBlock);
 		dir->nFiles = dir->nFiles + 1;
 		// Write the updated directory back to disk
 		write_to_disk((void *) dir, dirBlock, disk);
@@ -428,7 +435,7 @@ static int cs1550_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 	FILE * disk = fopen(DISK_FILE_NAME, "rb+");
 	if (disk == NULL) {
-		printf("ERROR: Could not open the disk %s\n", MAX_FILENAME);
+		printf("ERROR: Could not open the disk\n");
 	}
 	// Get the root from the disk
 	root_directory * root = get_root_directory(disk);
@@ -526,10 +533,10 @@ static int cs1550_getattr(const char *path, struct stat *stbuf)
 						printf("Comparing existing file %s to the file %s out of %d total files\n", dir->files[i].fname, filename, dir->nFiles);
 						if (strcmp(dir->files[i].fname, filename) == 0) {
 							printf("FILE %s FOUND!\n", filename);
-							i = -1;
+							stbuf->st_size = dir->files[i].fsize; // file size
 							stbuf->st_mode = S_IFREG | 0666;
 							stbuf->st_nlink = 1; // file links
-							stbuf->st_size = dir->files[i].fsize; // file size
+							i = -1;
 							break;
 						}
 					}
@@ -538,7 +545,6 @@ static int cs1550_getattr(const char *path, struct stat *stbuf)
 					stbuf->st_mode = S_IFDIR | 0755;
           stbuf->st_nlink = 2;
 				}
-
 			}
 			free(root);
 			fclose(disk);
@@ -559,8 +565,9 @@ static int cs1550_mkdir(const char *path, mode_t mode)
 	(void) mode;
 	(void) path;
 	int res = 0;
-
-	char * new_directory = strtok(path, "/");
+	char pathCopy[strlen(path)];
+	strcpy(pathCopy, path);
+	char * new_directory = strtok(pathCopy, "/");
 	if (strtok(NULL, "/") != NULL) { // Means the user planned to make a second-level directory (big NO NO!)
 		return -EPERM; // Message sent by first-level directory gang
 	}
@@ -585,7 +592,7 @@ static int cs1550_mkdir(const char *path, mode_t mode)
 			// Increase the number of directories
 			root->nDirectories++;
 			printf("WRITING ROOT TO DISK WITH NEW DIRECTORY\n");
-			printf("New dir: name %s at block %d\n", root->directories[currDirNum].dname, root->directories[currDirNum].nStartBlock);
+			// printf("New dir: name %s at block %d\n", root->directories[currDirNum].dname, root->directories[currDirNum].nStartBlock);
 			write_to_disk((void *) root, 0, disk);
 		}
 	}
